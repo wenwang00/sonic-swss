@@ -421,11 +421,12 @@ bool RouteSync::parseSrv6LocalSidFormat(struct rtattr *tb,
 bool RouteSync::parseSrv6LocalSid(struct rtattr *tb[], string &block_len,
                                   string &node_len, string &func_len,
                                   string &arg_len, string &action,
-                                  string &vrf, string &adj)
+                                  string &vrf, string &adj, string &ifname)
 {
     uint32_t action_buf = SRV6_LOCALSID_ACTION_UNSPEC;
     char vrf_buf[IFNAMSIZ + 1] = {0};
     char adj_buf[MAX_ADDR_SIZE + 1] = {0};
+    char ifname_buf[20] = {0};
 
     if (tb[SRV6_LOCALSID_FORMAT])
     {
@@ -464,14 +465,20 @@ bool RouteSync::parseSrv6LocalSid(struct rtattr *tb[], string &block_len,
                strlen((char *)RTA_DATA(tb[SRV6_LOCALSID_VRFNAME])));
     }
 
+    if (tb[SRV6_LOCALSID_IIF])
+    {
+        memcpy(ifname_buf, (char *)RTA_DATA(tb[SRV6_LOCALSID_IIF]),
+               strlen((char *)RTA_DATA(tb[SRV6_LOCALSID_IIF])));
+    }
+
     action = localSidAction2Str(action_buf);
     vrf = vrf_buf;
     adj = adj_buf;
-
+    ifname = ifname_buf;
     SWSS_LOG_INFO("Rx block_len:%s node_len:%s func_len:%s arg_len:%s "
-                  "action:%s vrf:%s adj:%s",
+                  "action:%s vrf:%s adj:%s ifname:%s",
                   block_len.c_str(), node_len.c_str(), func_len.c_str(),
-                  arg_len.c_str(), action.c_str(), vrf.c_str(), adj.c_str());
+                  arg_len.c_str(), action.c_str(), vrf.c_str(), adj.c_str(), ifname.c_str());
 
     return true;
 }
@@ -1298,10 +1305,11 @@ void RouteSync::onSrv6LocalSidMsg(struct nlmsghdr *h, int len)
     string vrf_str;
     string adj_str;
     string my_sid_table_key;
+    string ifname_str;
 
     if (!parseSrv6LocalSid(tb, block_len_str, node_len_str,
                       func_len_str, arg_len_str, action_str, vrf_str,
-                      adj_str))
+                      adj_str, ifname_str))
     {
         SWSS_LOG_ERROR("Invalid Srv6 localsid");
         return;
@@ -1396,7 +1404,7 @@ void RouteSync::onSrv6LocalSidMsg(struct nlmsghdr *h, int len)
         return;
     }
 
-    if (!(action_str.compare("end.x")) && adj_str.empty())
+    if (!(action_str.compare("end.x")) && adj_str.empty() && ifname_str.empty())
     {
         SWSS_LOG_NOTICE("Localsid End.X IP Prefix: %s adj is empty",
                         sid_value_str);
@@ -1429,6 +1437,11 @@ void RouteSync::onSrv6LocalSidMsg(struct nlmsghdr *h, int len)
     {
         FieldValueTuple adj("adj", adj_str);
         fvVector.push_back(adj);
+    }
+    if (!ifname_str.empty())
+    {
+        FieldValueTuple ifname("ifname", ifname_str);
+        fvVector.push_back(ifname);
     }
 
     m_srv6LocalSidTable.set(my_sid_table_key, fvVector);
